@@ -14,8 +14,11 @@
 
 #include "ascii.h"
 
+static const char *device = "/dev/ttyS0";
 static struct timeval tv1, tv2;
+static int ser;
 
+int reconnect(void);
 int ser_connect(const char *device);
 int cmd_send(int ser, const char *cmd, int checksum);
 int cmd_recv(int ser, int timeout);
@@ -24,17 +27,13 @@ float seconds_elapsed(void);
 
 int main(int argc, char *argv[])
 {
-	int ser = ser_connect("/dev/ttyS0");
 	int i;
 #if 0
 	char c, buf[BUFSIZ];
 #endif
-	if(ser < 0) {
-		return EXIT_FAILURE;
-	}
 
-	cmd_send(ser, "H", 0);
-	cmd_recv(ser, 2);
+	if(!reconnect())
+		return EXIT_FAILURE;
 
 #if 1
 	for(i = 4; i < 8; i ++)
@@ -96,8 +95,11 @@ int brute_force(int ser, unsigned int cmdlen)
 			if((cmd_recv(ser, 10) != 0) && (cmdbuf[0] != 'H'))
 				printf("cmd: %s (w/o checksum)\n", cmdbuf);
 			t = seconds_elapsed();
-			if(t > 1.0)
-				printf("cmd: %s (%.4f seconds, w/o checksum)\n", cmdbuf, t);
+			if(t > 1.0) {
+				printf("cmd: %s (%.4f seconds, w/o checksum) - resetting...\n",
+					cmdbuf, t);
+				reconnect();
+			}
 
 #if 0
 			cmd_send(ser, cmdbuf, 1);
@@ -110,14 +112,28 @@ int brute_force(int ser, unsigned int cmdlen)
 			fflush(stdout);
 		}
 		if(cnt >= 10000) {
-			printf("I: 10000 checks done, resetting...\n");
-			cmd_send(ser, "H", 0);
-			cmd_recv(ser, 2);
+			printf("I: 10000 checks done (%s), resetting...\n", cmdbuf);
+			reconnect();
 			cnt = 0;
 		}
 	}
 	free(cmdbuf);
 	return 0;
+}
+
+int reconnect(void)
+{
+	if(ser != -1)
+		close(ser);
+	sleep(1);
+
+	ser = ser_connect(device);
+	if(ser < 0)
+		return 0;
+
+	cmd_send(ser, "H", 0);
+	cmd_recv(ser, 2);
+	return 1;
 }
 
 int ser_connect(const char *device)
